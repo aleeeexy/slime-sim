@@ -1,4 +1,4 @@
-**Members: Rahul Myana (rm62647), Joseph Turcios (jat5874), Alex Yoon (ay7583)**
+**Members: Rahul Myana, Joseph Turcios, Alex Yoon**
 
 Build the project:
 
