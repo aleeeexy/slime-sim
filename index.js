@@ -55,7 +55,10 @@ const AgentShader = `
     }
     
     fn wrap(value: f32, max: f32) -> f32 {
-        return clamp(value, 0.0, max - 1.0);
+        var v = value;
+        if (v < 0.0) { v += max; }
+        if (v >= max) { v -= max; }
+        return v;
     }
     
     @compute @workgroup_size(256)
