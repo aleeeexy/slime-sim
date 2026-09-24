@@ -1,9 +1,9 @@
-**Members: Rahul Myana, Joseph Turcios, Alex Yoon**
+# slime-sim
 
-Build the project:
+WebGPU slime-mould simulation. Static files, no build step.
 
-`python3 make-skinning.py`
+Serve the project directory with any static file server:
 
-Run the server on a web browser that supports WebGPU (e.g. Chrome):
+`python3 -m http.server`
 
-`http-server dist -c-1`
+Then open the served URL in a browser that supports WebGPU (e.g. Chrome).

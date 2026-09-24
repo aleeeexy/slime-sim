@@ -293,7 +293,7 @@ async function start() {
 async function main(device) {
   const gui = new GUI();
 
-  const canvas = document.querySelector("canvas");
+  let canvas = document.querySelector("canvas");
   if (!canvas) {
     canvas = document.createElement("canvas");
     document.body.appendChild(canvas);
@@ -418,17 +418,22 @@ async function main(device) {
   ];
 
   function drawFood(x, y, radius = 10) {
-    const data = new Uint8Array(WIDTH * HEIGHT * 4).fill(0);
+    const xMin = Math.max(0, Math.floor(x - radius));
+    const xMax = Math.min(WIDTH - 1, Math.ceil(x + radius));
+    const yMin = Math.max(0, Math.floor(y - radius));
+    const yMax = Math.min(HEIGHT - 1, Math.ceil(y + radius));
 
-    for (let dy = -radius; dy <= radius; dy++) {
-      for (let dx = -radius; dx <= radius; dx++) {
-        const nx = Math.floor(x + dx);
-        const ny = Math.floor(y + dy);
-        if (nx < 0 || ny < 0 || nx >= WIDTH || ny >= HEIGHT) continue;
+    const boxW = xMax - xMin + 1;
+    const boxH = yMax - yMin + 1;
+    if (boxW <= 0 || boxH <= 0) return;
 
-        const dist = Math.hypot(dx, dy);
+    const data = new Uint8Array(boxW * boxH * 4).fill(0);
+
+    for (let ny = yMin; ny <= yMax; ny++) {
+      for (let nx = xMin; nx <= xMax; nx++) {
+        const dist = Math.hypot(nx - x, ny - y);
         if (dist <= radius) {
-          const index = (ny * WIDTH + nx) * 4;
+          const index = ((ny - yMin) * boxW + (nx - xMin)) * 4;
           data[index] = 255; // Red
           data[index + 1] = 0;
           data[index + 2] = 0;
@@ -439,10 +444,10 @@ async function main(device) {
 
     for (let tex of foodTextures) {
       device.queue.writeTexture(
-        { texture: tex },
+        { texture: tex, origin: { x: xMin, y: yMin } },
         data,
-        { bytesPerRow: WIDTH * 4 },
-        [WIDTH, HEIGHT]
+        { bytesPerRow: boxW * 4 },
+        [boxW, boxH]
       );
     }
   }
@@ -450,7 +455,7 @@ async function main(device) {
   clearTextures();
 
   // Uniform buffers
-  var params = new Float32Array([WIDTH, HEIGHT, settings.COLOR, 0]);
+  var params = new Float32Array([WIDTH, HEIGHT, 0, 0]);
   var paramBuffer = device.createBuffer({
     size: params.byteLength,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
@@ -587,7 +592,7 @@ async function main(device) {
       drawFood(simX, simY, 20);
       console.log("Food placed at:", simX, simY);
     }
-    else{
+    else {
       const rect = canvas.getBoundingClientRect();
       const mouseX = e.clientX - rect.left;
       const mouseY = e.clientY - rect.top;
