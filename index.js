@@ -19,19 +19,33 @@ const FragShader = `
 
     @fragment fn fs(@builtin(position) fragCoord: vec4f) -> @location(0) vec4f {
         let uv = fragCoord.xy / vec2f(params.xy);
+        let texel = vec2f(1.0) / vec2f(params.xy);
 
         let trail = textureSample(trailTex, texSampler, uv).x;
-        let foodColor = textureSample(foodTex, texSampler, uv); // This is a vec4f
 
-        // Trail as grayscale colored by user settings
+        // Soft glow: blur the food texture over a few taps instead of a hard-edged blob
+        var foodGlow = textureSample(foodTex, texSampler, uv).rgb * 0.4;
+        foodGlow += textureSample(foodTex, texSampler, uv + vec2f(texel.x * 3.0, 0.0)).rgb * 0.15;
+        foodGlow += textureSample(foodTex, texSampler, uv - vec2f(texel.x * 3.0, 0.0)).rgb * 0.15;
+        foodGlow += textureSample(foodTex, texSampler, uv + vec2f(0.0, texel.y * 3.0)).rgb * 0.15;
+        foodGlow += textureSample(foodTex, texSampler, uv - vec2f(0.0, texel.y * 3.0)).rgb * 0.15;
+
+        // Gamma-lift the trail so mid intensities read brighter than a flat linear ramp
+        let t = pow(trail, 0.75);
         let trailColor = vec3f(
-            trail * colors.x / 255.0,
-            trail * colors.y / 255.0,
-            trail * colors.z / 255.0
+            t * colors.x / 255.0,
+            t * colors.y / 255.0,
+            t * colors.z / 255.0
         );
 
-        // Blend: trail + food (clamped)
-        let finalColor = clamp(trailColor + foodColor.rgb, vec3f(0.0), vec3f(1.0));
+        // Soft (Reinhard) tone map instead of a hard clamp, so overlaps don't blow out
+        let combined = trailColor + foodGlow;
+        let toneMapped = combined / (combined + vec3f(1.0));
+
+        // Vignette over a dark background tint instead of flat black
+        let bg = vec3f(0.02, 0.02, 0.05);
+        let vignette = 1.0 - smoothstep(0.55, 0.95, distance(uv, vec2f(0.5, 0.5)));
+        let finalColor = bg + toneMapped * vignette;
 
         return vec4f(finalColor, 1.0);
     }
@@ -311,34 +325,46 @@ async function main(device) {
   });
 
   // Simulation parameters
-  const WIDTH = (canvas.width = window.innerWidth);
-  const HEIGHT = (canvas.height = window.innerHeight);
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const WIDTH = (canvas.width = Math.floor(window.innerWidth * dpr));
+  const HEIGHT = (canvas.height = Math.floor(window.innerHeight * dpr));
   const NUM_AGENTS = 250_000;
 
   var settings = {
     SENSOR_ANGLE: 0.3,
     SENSOR_DIST: 9,
-    MOVE_SPEED: 1.0,
+    MOVE_SPEED: 1.5,
     TURN_SPEED: 0.1,
     DECAY: 0.98,
     DIFFUSE: 0.2,
-    COLOR: [255, 255, 255],
+    COLOR: [90, 200, 255],
     SHAPE: "random",
     RESET: function () {
       resetSimulation();
     },
   };
 
-  // MAKE THIS RANGES MAKE SENSE
-  gui.add(settings, "SENSOR_ANGLE", 0, 1);
-  gui.add(settings, "SENSOR_DIST", 1, 15);
-  gui.add(settings, "MOVE_SPEED", 1, 10);
-  gui.add(settings, "TURN_SPEED", -10, 10);
-  gui.add(settings, "DECAY", 0.1, 1);
-  gui.add(settings, "DIFFUSE", 0.1, 1);
-  gui.addColor(settings, "COLOR");
-  gui.add(settings, "SHAPE", ["random", "circle"]);
-  gui.add(settings, "RESET");
+  const sensorsFolder = gui.addFolder("Sensors");
+  sensorsFolder.add(settings, "SENSOR_ANGLE", 0, Math.PI / 2);
+  sensorsFolder.add(settings, "SENSOR_DIST", 1, 30);
+  sensorsFolder.open();
+
+  const movementFolder = gui.addFolder("Movement");
+  movementFolder.add(settings, "MOVE_SPEED", 0.1, 5);
+  movementFolder.add(settings, "TURN_SPEED", -0.5, 0.5);
+  movementFolder.open();
+
+  const trailFolder = gui.addFolder("Trail");
+  trailFolder.add(settings, "DECAY", 0.1, 1);
+  trailFolder.add(settings, "DIFFUSE", 0.1, 1);
+  trailFolder.open();
+
+  const appearanceFolder = gui.addFolder("Appearance");
+  appearanceFolder.addColor(settings, "COLOR");
+  appearanceFolder.add(settings, "SHAPE", ["random", "circle"]);
+  appearanceFolder.open();
+
+  gui.add(settings, "RESET").name("Reset Simulation");
 
   function initAgents() {
     const agents = new Float32Array(NUM_AGENTS * 3);
@@ -585,6 +611,8 @@ async function main(device) {
   });
 
   // Handle user input
+  canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+
   canvas.addEventListener("mousedown", (e) => {
     if (e.ctrlKey) { // Hold Ctrl to place food
       const rect = canvas.getBoundingClientRect();

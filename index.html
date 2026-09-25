@@ -3,23 +3,44 @@
 <head>
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<meta name="theme-color" content="#05050c">
+	<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>%F0%9F%A6%A0</text></svg>">
 	<title>WebGPU Slime Mould Simulation</title>
 
 	<style>
 		html, body {
-		  margin: 0;       
-		  height: 100%;   
+		  margin: 0;
+		  height: 100%;
+		  background: #05050c;
 		}
 		canvas {
-		  display: block; 
+		  display: block;
 		  width: 100vw;
 		  height: 100vh;
+		  cursor: crosshair;
+		  touch-action: none;
+		  user-select: none;
+		  -webkit-user-select: none;
+		}
+		#hint {
+		  position: fixed;
+		  left: 12px;
+		  bottom: 12px;
+		  color: rgba(255, 255, 255, 0.5);
+		  font: 12px/1.4 system-ui, sans-serif;
+		  pointer-events: none;
+		  user-select: none;
+		}
+		.dg.main {
+		  margin-top: 8px;
+		  margin-right: 8px;
 		}
 	</style>
 </head>
 <body>
 	<canvas></canvas>
+	<div id="hint">Click: erase &middot; Ctrl+Click: food &middot; F: random food</div>
 	<script type="module" src="index.js"></script>
-	
+
 </body>
 </html>
