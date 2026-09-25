@@ -590,8 +590,8 @@ async function main(device) {
       const rect = canvas.getBoundingClientRect();
       const mouseX = e.clientX - rect.left;
       const mouseY = e.clientY - rect.top;
-      const simX = (mouseX * WIDTH) / canvas.width;
-      const simY = (mouseY * HEIGHT) / canvas.height;
+      const simX = (mouseX * WIDTH) / rect.width;
+      const simY = (mouseY * HEIGHT) / rect.height;
       drawFood(simX, simY, 20);
       console.log("Food placed at:", simX, simY);
     }
@@ -599,8 +599,8 @@ async function main(device) {
       const rect = canvas.getBoundingClientRect();
       const mouseX = e.clientX - rect.left;
       const mouseY = e.clientY - rect.top;
-      const simX = (mouseX * WIDTH) / canvas.width;
-      const simy = (mouseY * HEIGHT) / canvas.height;
+      const simX = (mouseX * WIDTH) / rect.width;
+      const simy = (mouseY * HEIGHT) / rect.height;
       const radius = 150; // Maybe make this variable using GUI?
       destroy.set([simX, simy, radius]);
       device.queue.writeBuffer(destroyBuffer, 0, destroy);
