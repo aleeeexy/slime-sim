@@ -63,23 +63,23 @@ const AgentShader = `
     @group(0) @binding(3) var<uniform> params: vec4f;
     @group(0) @binding(4) var<uniform> simParams: vec4f;
 	  @group(0) @binding(5) var foodTex: texture_2d<f32>;
-    
+
     fn random(seed: f32) -> f32 {
         return fract(sin(seed * 78.233) * 43758.5453);
     }
-    
+
     fn wrap(value: f32, max: f32) -> f32 {
         var v = value;
         if (v < 0.0) { v += max; }
         if (v >= max) { v -= max; }
         return v;
     }
-    
+
     @compute @workgroup_size(256)
     fn main(@builtin(global_invocation_id) id: vec3u) {
         let i = id.x;
         if (i >= arrayLength(&agents)) { return; }
-        
+
         var agent = agents[i];
         let width = params.x;
         let height = params.y;
@@ -87,27 +87,27 @@ const AgentShader = `
         let sensorDist = simParams.y;
         let moveSpeed = simParams.z;
         let turnSpeed = simParams.w;
-        
+
         // Sensor positions
         let front = agent.pos + vec2f(cos(agent.angle), sin(agent.angle)) * sensorDist;
         let left = agent.pos + vec2f(cos(agent.angle - sensorAngle), sin(agent.angle - sensorAngle)) * sensorDist;
         let right = agent.pos + vec2f(cos(agent.angle + sensorAngle), sin(agent.angle + sensorAngle)) * sensorDist;
-        
+
         let frontWrapped = vec2f(
             wrap(front.x, width),
             wrap(front.y, height)
         );
-        
+
         let leftWrapped = vec2f(
             wrap(left.x, width),
             wrap(left.y, height)
         );
-        
+
         let rightWrapped = vec2f(
             wrap(right.x, width),
             wrap(right.y, height)
         );
-        
+
         // Sample trail + food values
         let trailF = textureLoad(trailTex, vec2i(frontWrapped), 0).x;
         let trailL = textureLoad(trailTex, vec2i(leftWrapped), 0).x;
@@ -122,7 +122,7 @@ const AgentShader = `
         let fVal = mix(trailF, foodF, foodWeight);
         let lVal = mix(trailL, foodL, foodWeight);
         let rVal = mix(trailR, foodR, foodWeight);
-        
+
         // Update direction
         if (lVal > fVal && lVal > rVal) {
             agent.angle -= turnSpeed;
@@ -136,12 +136,12 @@ const AgentShader = `
                 agent.angle -= turnSpeed;
             }
         }
-        
+
         agent.pos += vec2f(cos(agent.angle), sin(agent.angle)) * moveSpeed;
-        
+
         agent.pos.x = wrap(agent.pos.x, width);
         agent.pos.y = wrap(agent.pos.y, height);
-              
+
         let pos = vec2i(agent.pos);
         textureStore(trailOut, pos, vec4f(1.0, 0.0, 0.0, 1.0));
 
@@ -154,39 +154,39 @@ const DiffuseShader = `
     @group(0) @binding(1) var outputTex: texture_storage_2d<rgba8unorm, write>;
     @group(0) @binding(2) var<uniform> params: vec4f;
     @group(0) @binding(3) var<uniform> diffuseParams: vec2f;
-    
+
     @compute @workgroup_size(16, 16)
     fn main(@builtin(global_invocation_id) id: vec3u) {
         let coord = vec2i(id.xy);
         let width = i32(params.x);
         let height = i32(params.y);
-        
+
         if (coord.x >= width || coord.y >= height) { return; }
-        
+
         let decay = diffuseParams.x;
         let diffuseRate = diffuseParams.y;
-        
+
         let center = textureLoad(inputTex, coord, 0).x;
-        
+
         var sum = 0.0;
         for (var dy = -1; dy <= 1; dy++) {
             for (var dx = -1; dx <= 1; dx++) {
                 var sampleCoord = coord + vec2i(dx, dy);
-                
+
                 if (sampleCoord.x < 0) { sampleCoord.x += width; }
                 if (sampleCoord.x >= width) { sampleCoord.x -= width; }
                 if (sampleCoord.y < 0) { sampleCoord.y += height; }
                 if (sampleCoord.y >= height) { sampleCoord.y -= height; }
-                
+
                 sum += textureLoad(inputTex, sampleCoord, 0).x;
             }
         }
-        
+
         let decayed = center * decay;
         let diffused = mix(decayed, sum / 9.0, diffuseRate);
-        
+
         textureStore(outputTex, coord, vec4f(diffused, 0.0, 0.0, 1.0));
-		
+
     }
 `;
 
@@ -219,24 +219,24 @@ const destroyAgentsShader = `
     fn main(@builtin(global_invocation_id) id: vec3u) {
         let i = id.x;
         if (i >= arrayLength(&agents)) { return; }
-        
+
         var agent = agents[i];
         let center = destroyParams.xy;
         let radius = destroyParams.z;
-        
+
         if (radius > 0.0 && distance(agent.pos, center) < radius) {
-            
+
             let width = params.x;
             let height = params.y;
-            
+
             let seed = agent.pos.x + agent.pos.y + f32(i) * 0.1;
-            
+
             let randX = fract(sin(seed * 78.233) * 43758.5453);
             let randY = fract(sin((seed + 1.0) * 78.233) * 43758.5453);
             let randAngle = fract(sin((seed + 2.0) * 78.233) * 43758.5453) * 6.28318;
-            
+
             let edge = floor(randX * 4.0);
-            
+
             if (edge < 1.0) {
                 agent.pos = vec2f(randX * width, 0.0);
             } else if (edge < 2.0) {
@@ -246,9 +246,9 @@ const destroyAgentsShader = `
             } else {
                 agent.pos = vec2f(0.0, randY * height);
             }
-            
+
             agent.angle = randAngle;
-            
+
             agents[i] = agent;
         }
     }
@@ -283,6 +283,13 @@ const foodDecayShader = `
   }
 `;
 
+// Tracks the previous session's GUI panel / animation loop / event listeners so a
+// WebGPU device-loss restart (see device.lost below) can tear them down before
+// starting a new one, instead of stacking duplicates on top.
+let activeGui = null;
+let activeAbortController = null;
+let activeAnimationFrameId = null;
+
 async function start() {
   if (!navigator.gpu) {
     console.error("This browser does not support WebGPU");
@@ -308,7 +315,21 @@ async function start() {
 }
 
 async function main(device) {
+  if (activeAnimationFrameId) {
+    cancelAnimationFrame(activeAnimationFrameId);
+    activeAnimationFrameId = null;
+  }
+  if (activeGui) {
+    activeGui.destroy();
+  }
+  if (activeAbortController) {
+    activeAbortController.abort();
+  }
+  activeAbortController = new AbortController();
+  const { signal } = activeAbortController;
+
   const gui = new GUI();
+  activeGui = gui;
 
   let canvas = document.querySelector("canvas");
   if (!canvas) {
@@ -325,9 +346,9 @@ async function main(device) {
   });
 
   // Simulation parameters
-  const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const WIDTH = (canvas.width = Math.floor(window.innerWidth * dpr));
-  const HEIGHT = (canvas.height = Math.floor(window.innerHeight * dpr));
+  let dpr = Math.min(window.devicePixelRatio || 1, 2);
+  let WIDTH = (canvas.width = Math.floor(window.innerWidth * dpr));
+  let HEIGHT = (canvas.height = Math.floor(window.innerHeight * dpr));
   const NUM_AGENTS = 250_000;
 
   var settings = {
@@ -390,61 +411,50 @@ async function main(device) {
     return agents;
   }
 
-  let agents = initAgents();
-
-  let agentBuffer = device.createBuffer({
-    size: agents.byteLength,
-    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-    mappedAtCreation: true,
-  });
-  new Float32Array(agentBuffer.getMappedRange()).set(agents);
-  agentBuffer.unmap();
-
-  // Trail textures (double buffered)
-  let trailTextureDesc = {
-    size: [WIDTH, HEIGHT],
-    format: "rgba8unorm",
-    usage:
-      GPUTextureUsage.STORAGE_BINDING |
-      GPUTextureUsage.TEXTURE_BINDING |
-      GPUTextureUsage.COPY_DST,
-  };
-
-  const trailTextures = [
-    device.createTexture(trailTextureDesc),
-    device.createTexture(trailTextureDesc),
-  ];
-
-  function clearTextures() {
-    const clearColor = new Uint8Array(WIDTH * HEIGHT * 4).fill(0);
-    for (let i = 0; i < 2; i++) {
-      device.queue.writeTexture(
-        { texture: trailTextures[i] },
-        clearColor,
-        { bytesPerRow: WIDTH * 4, rowsPerImage: HEIGHT },
-        [WIDTH, HEIGHT]
-      );
-    }
+  // Builds a fresh GPU-backed agent buffer from a new random agent layout.
+  // Used at startup, on RESET, and on a canvas resize.
+  function createAgentBuffer() {
+    const agents = initAgents();
+    const buffer = device.createBuffer({
+      size: agents.byteLength,
+      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+      mappedAtCreation: true,
+    });
+    new Float32Array(buffer.getMappedRange()).set(agents);
+    buffer.unmap();
+    return buffer;
   }
 
-  const foodTextures = [
-    device.createTexture({
+  let agentBuffer = createAgentBuffer();
+
+  // Trail + food textures (double buffered). Recreated on resize since their
+  // size is baked in at creation time; cleared and reused on a plain RESET.
+  function createTrailTextures() {
+    const desc = {
       size: [WIDTH, HEIGHT],
       format: "rgba8unorm",
       usage:
         GPUTextureUsage.STORAGE_BINDING |
         GPUTextureUsage.TEXTURE_BINDING |
         GPUTextureUsage.COPY_DST,
-    }),
-    device.createTexture({
+    };
+    return [device.createTexture(desc), device.createTexture(desc)];
+  }
+
+  function createFoodTextures() {
+    const desc = {
       size: [WIDTH, HEIGHT],
       format: "rgba8unorm",
       usage:
         GPUTextureUsage.STORAGE_BINDING |
         GPUTextureUsage.TEXTURE_BINDING |
         GPUTextureUsage.COPY_DST,
-    }),
-  ];
+    };
+    return [device.createTexture(desc), device.createTexture(desc)];
+  }
+
+  let trailTextures = createTrailTextures();
+  let foodTextures = createFoodTextures();
 
   function drawFood(x, y, radius = 10) {
     const xMin = Math.max(0, Math.floor(x - radius));
@@ -481,7 +491,21 @@ async function main(device) {
     }
   }
 
-  clearTextures();
+  // Clears both trail and food textures. Used identically at startup and on
+  // RESET/resize so neither pair depends on WebGPU's implicit zero-init.
+  function clearAllTextures() {
+    const clearColor = new Uint8Array(WIDTH * HEIGHT * 4).fill(0);
+    for (let tex of [...trailTextures, ...foodTextures]) {
+      device.queue.writeTexture(
+        { texture: tex },
+        clearColor,
+        { bytesPerRow: WIDTH * 4, rowsPerImage: HEIGHT },
+        [WIDTH, HEIGHT]
+      );
+    }
+  }
+
+  clearAllTextures();
 
   // Uniform buffers
   var params = new Float32Array([WIDTH, HEIGHT, 0, 0]);
@@ -610,81 +634,195 @@ async function main(device) {
     },
   });
 
+  // Cached bind groups, keyed by the current ping-pong parity (0 or 1).
+  // Rebuilt only when the resources they reference change shape (resize) or
+  // identity (a new agent buffer on RESET/resize) instead of every frame.
+  let agentBindGroups = [];
+  let diffuseBindGroups = [];
+  let foodDecayBindGroups = [];
+  let renderBindGroups = [];
+  let destroyBindGroups = [];
+  let destroyAgentsBindGroup = null;
+
+  function buildBindGroups() {
+    agentBindGroups = [0, 1].map((cur) => {
+      const next = 1 - cur;
+      return device.createBindGroup({
+        layout: agentPipeline.getBindGroupLayout(0),
+        entries: [
+          { binding: 0, resource: { buffer: agentBuffer } },
+          { binding: 1, resource: trailTextures[cur].createView() },
+          { binding: 2, resource: trailTextures[next].createView() },
+          { binding: 3, resource: { buffer: paramBuffer } },
+          { binding: 4, resource: { buffer: simParamBuffer } },
+          { binding: 5, resource: foodTextures[cur].createView() },
+        ],
+      });
+    });
+
+    diffuseBindGroups = [0, 1].map((cur) => {
+      const next = 1 - cur;
+      return device.createBindGroup({
+        layout: diffusePipeline.getBindGroupLayout(0),
+        entries: [
+          { binding: 0, resource: trailTextures[next].createView() },
+          { binding: 1, resource: trailTextures[cur].createView() },
+          { binding: 2, resource: { buffer: paramBuffer } },
+          { binding: 3, resource: { buffer: diffuseParamBuffer } },
+        ],
+      });
+    });
+
+    foodDecayBindGroups = [0, 1].map((cur) => {
+      const next = 1 - cur;
+      return device.createBindGroup({
+        layout: FoodDecayPipeline.getBindGroupLayout(0),
+        entries: [
+          { binding: 0, resource: foodTextures[cur].createView() },
+          { binding: 1, resource: foodTextures[next].createView() },
+          { binding: 2, resource: { buffer: paramBuffer } },
+        ],
+      });
+    });
+
+    renderBindGroups = [0, 1].map((cur) => {
+      return device.createBindGroup({
+        layout: renderPipeline.getBindGroupLayout(0),
+        entries: [
+          { binding: 0, resource: trailTextures[cur].createView() },
+          { binding: 1, resource: sampler },
+          { binding: 2, resource: { buffer: paramBuffer } },
+          { binding: 3, resource: { buffer: colorBuffer } },
+          { binding: 4, resource: foodTextures[cur].createView() },
+        ],
+      });
+    });
+
+    destroyBindGroups = [0, 1].map((cur) => {
+      return device.createBindGroup({
+        layout: destroyPipeline.getBindGroupLayout(0),
+        entries: [
+          { binding: 0, resource: { buffer: destroyBuffer } },
+          { binding: 1, resource: trailTextures[cur].createView() },
+        ],
+      });
+    });
+
+    destroyAgentsBindGroup = device.createBindGroup({
+      layout: destroyAgentsPipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: { buffer: destroyBuffer } },
+        { binding: 1, resource: { buffer: agentBuffer } },
+        { binding: 2, resource: { buffer: paramBuffer } },
+      ],
+    });
+  }
+
+  buildBindGroups();
+
   // Handle user input
-  canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+  canvas.addEventListener("contextmenu", (e) => e.preventDefault(), { signal });
 
-  canvas.addEventListener("mousedown", (e) => {
-    if (e.ctrlKey) { // Hold Ctrl to place food
-      const rect = canvas.getBoundingClientRect();
-      const mouseX = e.clientX - rect.left;
-      const mouseY = e.clientY - rect.top;
-      const simX = (mouseX * WIDTH) / rect.width;
-      const simY = (mouseY * HEIGHT) / rect.height;
-      drawFood(simX, simY, 20);
-      console.log("Food placed at:", simX, simY);
-    }
-    else {
-      const rect = canvas.getBoundingClientRect();
-      const mouseX = e.clientX - rect.left;
-      const mouseY = e.clientY - rect.top;
-      const simX = (mouseX * WIDTH) / rect.width;
-      const simy = (mouseY * HEIGHT) / rect.height;
-      const radius = 150; // Maybe make this variable using GUI?
-      destroy.set([simX, simy, radius]);
-      device.queue.writeBuffer(destroyBuffer, 0, destroy);
-      window.destroy = true;
-      console.log(simX, simy, radius);
-    }
+  canvas.addEventListener(
+    "mousedown",
+    (e) => {
+      if (e.ctrlKey) { // Hold Ctrl to place food
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+        const simX = (mouseX * WIDTH) / rect.width;
+        const simY = (mouseY * HEIGHT) / rect.height;
+        drawFood(simX, simY, 20);
+        console.log("Food placed at:", simX, simY);
+      }
+      else {
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+        const simX = (mouseX * WIDTH) / rect.width;
+        const simy = (mouseY * HEIGHT) / rect.height;
+        const radius = 150; // Maybe make this variable using GUI?
+        destroy.set([simX, simy, radius]);
+        device.queue.writeBuffer(destroyBuffer, 0, destroy);
+        window.destroy = true;
+        console.log(simX, simy, radius);
+      }
+    },
+    { signal }
+  );
 
-  });
+  window.addEventListener(
+    "keydown",
+    (e) => {
+      // Ignore shortcuts while the user is typing into a form control (e.g. a GUI field)
+      const target = e.target;
+      const tag = (target && target.tagName) || "";
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || (target && target.isContentEditable)) {
+        return;
+      }
 
-  window.addEventListener("keydown", (e) => {
-    if (e.key.toLowerCase() === "f") {
-      console.log("F key pressed");
-      const x = Math.random() * WIDTH;
-      const y = Math.random() * HEIGHT;
-      drawFood(x, y, 10);
-    }
-  });
+      if (e.key.toLowerCase() === "f") {
+        console.log("F key pressed");
+        const x = Math.random() * WIDTH;
+        const y = Math.random() * HEIGHT;
+        drawFood(x, y, 10);
+      }
+    },
+    { signal }
+  );
 
   let currentTexture = 0;
-  let animationFrameId = null;
-
-  let currentFood = 0;
 
   function resetSimulation() {
-    if (animationFrameId) {
-      cancelAnimationFrame(animationFrameId);
+    if (activeAnimationFrameId) {
+      cancelAnimationFrame(activeAnimationFrameId);
     }
 
-    agents = initAgents();
-    agentBuffer = device.createBuffer({
-      size: agents.byteLength,
-      usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
-      mappedAtCreation: true,
-    });
-    new Float32Array(agentBuffer.getMappedRange()).set(agents);
-    agentBuffer.unmap();
+    agentBuffer = createAgentBuffer();
 
     clearAllTextures();
     currentTexture = 0;
+    buildBindGroups();
     frame();
   }
 
-  function clearAllTextures() {
-    const clearColor = new Uint8Array(WIDTH * HEIGHT * 4).fill(0);
-    for (let tex of [...trailTextures, ...foodTextures]) {
-      device.queue.writeTexture(
-        { texture: tex },
-        clearColor,
-        { bytesPerRow: WIDTH * 4, rowsPerImage: HEIGHT },
-        [WIDTH, HEIGHT]
-      );
+  let resizeTimeout = null;
+
+  function handleResize() {
+    if (activeAnimationFrameId) {
+      cancelAnimationFrame(activeAnimationFrameId);
     }
+
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    WIDTH = canvas.width = Math.floor(window.innerWidth * dpr);
+    HEIGHT = canvas.height = Math.floor(window.innerHeight * dpr);
+
+    trailTextures = createTrailTextures();
+    foodTextures = createFoodTextures();
+
+    params.set([WIDTH, HEIGHT, 0, 0]);
+    device.queue.writeBuffer(paramBuffer, 0, params);
+
+    agentBuffer = createAgentBuffer();
+
+    clearAllTextures();
+    currentTexture = 0;
+    buildBindGroups();
+    frame();
   }
 
+  window.addEventListener(
+    "resize",
+    () => {
+      clearTimeout(resizeTimeout);
+      resizeTimeout = setTimeout(handleResize, 200);
+    },
+    { signal }
+  );
+
   function frame() {
-    const nextTexture = 1 - currentTexture;
+    const cur = currentTexture;
+    const next = 1 - cur;
     const encoder = device.createCommandEncoder();
 
     //Reset buffer params
@@ -705,38 +843,14 @@ async function main(device) {
     // Agent update
     const agentPass = encoder.beginComputePass();
     agentPass.setPipeline(agentPipeline);
-    agentPass.setBindGroup(
-      0,
-      device.createBindGroup({
-        layout: agentPipeline.getBindGroupLayout(0),
-        entries: [
-          { binding: 0, resource: { buffer: agentBuffer } },
-          { binding: 1, resource: trailTextures[currentTexture].createView() },
-          { binding: 2, resource: trailTextures[nextTexture].createView() },
-          { binding: 3, resource: { buffer: paramBuffer } },
-          { binding: 4, resource: { buffer: simParamBuffer } },
-          { binding: 5, resource: foodTextures[currentFood].createView() }
-        ],
-      })
-    );
+    agentPass.setBindGroup(0, agentBindGroups[cur]);
     agentPass.dispatchWorkgroups(Math.ceil(NUM_AGENTS / 256));
     agentPass.end();
 
     // Diffuse pass
     const diffusePass = encoder.beginComputePass();
     diffusePass.setPipeline(diffusePipeline);
-    diffusePass.setBindGroup(
-      0,
-      device.createBindGroup({
-        layout: diffusePipeline.getBindGroupLayout(0),
-        entries: [
-          { binding: 0, resource: trailTextures[nextTexture].createView() },
-          { binding: 1, resource: trailTextures[currentTexture].createView() },
-          { binding: 2, resource: { buffer: paramBuffer } },
-          { binding: 3, resource: { buffer: diffuseParamBuffer } },
-        ],
-      })
-    );
+    diffusePass.setBindGroup(0, diffuseBindGroups[cur]);
     diffusePass.dispatchWorkgroups(
       Math.ceil(WIDTH / 16),
       Math.ceil(HEIGHT / 16)
@@ -745,14 +859,7 @@ async function main(device) {
 
     const foodDecayPass = encoder.beginComputePass();
     foodDecayPass.setPipeline(FoodDecayPipeline);
-    foodDecayPass.setBindGroup(0, device.createBindGroup({
-      layout: FoodDecayPipeline.getBindGroupLayout(0),
-      entries: [
-        { binding: 0, resource: foodTextures[currentFood].createView() },
-        { binding: 1, resource: foodTextures[1 - currentFood].createView() },
-        { binding: 2, resource: { buffer: paramBuffer } },
-      ],
-    }));
+    foodDecayPass.setBindGroup(0, foodDecayBindGroups[cur]);
     foodDecayPass.dispatchWorkgroups(Math.ceil(WIDTH / 16), Math.ceil(HEIGHT / 16));
     foodDecayPass.end();
 
@@ -760,19 +867,7 @@ async function main(device) {
     if (window.destroy) {
       const destroyPass = encoder.beginComputePass();
       destroyPass.setPipeline(destroyPipeline);
-      destroyPass.setBindGroup(
-        0,
-        device.createBindGroup({
-          layout: destroyPipeline.getBindGroupLayout(0),
-          entries: [
-            { binding: 0, resource: { buffer: destroyBuffer } },
-            {
-              binding: 1,
-              resource: trailTextures[currentTexture].createView(),
-            },
-          ],
-        })
-      );
+      destroyPass.setBindGroup(0, destroyBindGroups[cur]);
       destroyPass.dispatchWorkgroups(
         Math.ceil(WIDTH / 16),
         Math.ceil(HEIGHT / 16)
@@ -781,18 +876,7 @@ async function main(device) {
 
       const destroyAgentsPass = encoder.beginComputePass();
       destroyAgentsPass.setPipeline(destroyAgentsPipeline);
-      destroyAgentsPass.setBindGroup(
-        0,
-        device.createBindGroup({
-          layout: destroyAgentsPipeline.getBindGroupLayout(0),
-          entries: [
-            { binding: 0, resource: { buffer: destroyBuffer } },
-            { binding: 1, resource: { buffer: agentBuffer } },
-            { binding: 2, resource: { buffer: paramBuffer } },
-          ],
-        })
-      );
-
+      destroyAgentsPass.setBindGroup(0, destroyAgentsBindGroup);
       destroyAgentsPass.dispatchWorkgroups(Math.ceil(NUM_AGENTS / 256));
       destroyAgentsPass.end();
 
@@ -811,26 +895,13 @@ async function main(device) {
       ],
     });
     renderPass.setPipeline(renderPipeline);
-    renderPass.setBindGroup(
-      0,
-      device.createBindGroup({
-        layout: renderPipeline.getBindGroupLayout(0),
-        entries: [
-          { binding: 0, resource: trailTextures[currentTexture].createView() },
-          { binding: 1, resource: sampler },
-          { binding: 2, resource: { buffer: paramBuffer } },
-          { binding: 3, resource: { buffer: colorBuffer } },
-          { binding: 4, resource: foodTextures[currentFood].createView() },
-        ],
-      })
-    );
+    renderPass.setBindGroup(0, renderBindGroups[cur]);
     renderPass.draw(3);
     renderPass.end();
 
     device.queue.submit([encoder.finish()]);
-    currentTexture = nextTexture;
-    currentFood = 1 - currentFood;
-    animationFrameId = requestAnimationFrame(frame);
+    currentTexture = next;
+    activeAnimationFrameId = requestAnimationFrame(frame);
   }
 
   // Start animation
